@@ -56,6 +56,9 @@ export function Footer() {
             <a href="/privacy/" className="hover:text-white transition-colors text-slate-300">
               Privacy Policy
             </a>
+            <a href="/terms/" className="hover:text-white transition-colors text-slate-300">
+              Terms of Service
+            </a>
           </div>
 
           {/* Right Back to Top */}
