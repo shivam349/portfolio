@@ -81,7 +81,7 @@ export function constructMetadata({
       google:
         process.env.GOOGLE_SITE_VERIFICATION ||
         process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION ||
-        undefined,
+        'T2UDdVdpeCcBI4Jn3iMQBA2DC_Ad3_-yudIpIUbNyoI',
     },
   };
 }

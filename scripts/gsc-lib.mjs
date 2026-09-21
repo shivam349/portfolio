@@ -438,6 +438,25 @@ export function findMatchingProperty(properties, siteUrl) {
   return null;
 }
 
+// Automatically add site to Google Search Console via sites.add
+export async function addProperty(siteUrl, accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+  const normalized = siteUrl.replace(/\/+$/, '') + '/';
+  const encoded = encodeURIComponent(normalized);
+  const response = await fetch(`https://www.googleapis.com/webmasters/v3/sites/${encoded}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Length': '0',
+    },
+  });
+  if (!response.ok && response.status !== 204 && response.status !== 200) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to add property (${response.status}): ${errorBody}`);
+  }
+  return { success: true, siteUrl: normalized };
+}
+
 // Verify property ownership via Search Console API
 export async function verifyProperty(property, accessToken) {
   const token = accessToken || (await getValidAccessToken());
