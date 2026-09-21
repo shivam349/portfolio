@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Premium Data-Driven Developer & Analyst Portfolio Template
 
-## Getting Started
+A modern, high-performance personal portfolio and client-sellable template built with **Next.js 16 (App Router)**, **React 19**, **TypeScript**, **Tailwind CSS v4**, and **Motion**.
 
-First, run the development server:
+Engineered with a **100% data-driven architecture**, allowing developers, data analysts, AI/ML engineers, and designers to customize their entire portfolio simply by editing structured configuration files without touching component code.
 
+---
+
+## ✨ Features
+
+- **🎯 100% Truthful Resume Data Integration**: Extracted from verified experience, certifications, and quantifiable metrics for Shivam Garg (Data Analyst & AI Builder).
+- **⚡ Live Interactive Analytics Sandbox**: Switch between real production scenarios (*COD Risk Segmentation*, *Reporting Automation*, *Latency Optimization*), view dynamic charts, and copy production SQL queries.
+- **💎 21st.dev Style UI/UX Pro Max Aesthetic**: Modern dark cinema styling, interactive mouse-following spotlights, glassmorphic borders, and smooth micro-interactions.
+- **📊 Measurable Impact Bento**: Highlighting quantifiable results (*10k+ Monthly Orders*, *-15% RTO*, *60+ hrs/mo Saved*, *98% OTD*, *-35% Latency*).
+- **🚀 Motion Micro-Animations**: Refined scroll entrances, stagger effects, and smooth navigation active indicators.
+- **📱 Ultra-Responsive & Accessible**: Fully optimized for 360px mobile up to 1440px+ ultra-wide desktop displays, respecting `prefers-reduced-motion`.
+- **🔍 Complete SEO & Structured Data**: Built-in Schema.org `Person` JSON-LD, OpenGraph tags, dynamic `robots.txt`, and `sitemap.xml`.
+- **💼 Sellable White-Label Template**: Includes a full [`CLIENT_CUSTOMIZATION_GUIDE.md`](./CLIENT_CUSTOMIZATION_GUIDE.md) explaining how to rebrand and resell this template to clients.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: Next.js 16 (App Router with Turbopack)
+- **Library**: React 19 + TypeScript
+- **Styling**: Tailwind CSS v4
+- **Animations**: Motion (Framer Motion successor)
+- **Icons**: Lucide React + Custom SVG Brand Icons
+- **Fonts**: Inter (Sans) & JetBrains Mono (Code/Metrics)
+
+---
+
+## 🚀 Getting Started
+
+### 1. Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Run the Development Server
+```bash
+npm run dev
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Production Build
+```bash
+npm run build
+npm run start
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## 📁 Project Architecture
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+d:/d/
+├── CLIENT_CUSTOMIZATION_GUIDE.md  # Client resale and customization manual
+├── public/                        # Static assets (resume.pdf, icons)
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx             # Root layout with fonts, SEO tags, JSON-LD
+│   │   ├── page.tsx               # Main page assembly
+│   │   ├── globals.css            # Dark cinema tokens, scrollbars, patterns
+│   │   ├── robots.ts              # Dynamic robots.txt
+│   │   └── sitemap.ts             # Dynamic sitemap.xml
+│   ├── config/
+│   │   ├── site.ts                # Site metadata, navigation items, social links
+│   │   └── theme.ts               # Theme tokens, accent palettes, switches
+│   ├── data/
+│   │   └── portfolio.ts           # Central source of truth for all resume data
+│   ├── types/
+│   │   └── portfolio.ts           # TypeScript interfaces for portfolio data
+│   ├── components/
+│   │   ├── common/                # Shared headers, theme toggles, brand icons
+│   │   ├── ui/                    # BentoCard, Badge, MetricCounter, ShimmerButton
+│   │   └── sections/              # Navbar, Hero, Metrics, About, Sandbox,
+│   │                              # Experience, Projects, Skills, Education,
+│   │                              # Certifications, Contact, Footer
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 📄 Customization
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+To adapt this template for another client or profession, see the step-by-step guide in [`CLIENT_CUSTOMIZATION_GUIDE.md`](./CLIENT_CUSTOMIZATION_GUIDE.md).
