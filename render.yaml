@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: portfolio-seo-backend
+    env: node
+    plan: free
+    buildCommand: npm install --legacy-peer-deps
+    startCommand: node scripts/seo-server.mjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SEO_ADMIN_PORT
+        value: 10000
+      - key: PORT
+        value: 10000
+      - key: GOOGLE_PROJECT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GOOGLE_ENCRYPTION_KEY
+        sync: false
+      - key: SITE_URL
+        sync: false

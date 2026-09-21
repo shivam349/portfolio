@@ -522,11 +522,85 @@ export async function verifyWebResource(siteUrl, method = 'META', accessToken) {
   };
 }
 
-// Submit sitemap via official Search Console Sitemaps API
-export async function submitSitemap(property, sitemapUrl, accessToken) {
+export function getLocalSitemapHash() {
+  const sitemapPath = path.join(rootDir, 'public', 'sitemap.xml');
+  if (!fs.existsSync(sitemapPath)) return null;
+  const content = fs.readFileSync(sitemapPath, 'utf8');
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+// Get live sitemap status from Google Search Console API
+export async function getSitemapStatus(property, sitemapUrl, accessToken) {
   const token = accessToken || (await getValidAccessToken());
   const encodedProperty = encodeURIComponent(property);
   const encodedFeed = encodeURIComponent(sitemapUrl);
+
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/webmasters/v3/sites/${encodedProperty}/sitemaps/${encodedFeed}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (!response.ok) {
+      return {
+        status: 'PENDING',
+        lastDownloaded: null,
+        errors: 0,
+        warnings: 0,
+      };
+    }
+
+    const data = await response.json();
+    return {
+      status: data.isPending ? 'PENDING' : 'PROCESSED',
+      lastDownloaded: data.lastDownloaded || null,
+      lastSubmitted: data.lastSubmitted || null,
+      errors: parseInt(data.errors || '0', 10),
+      warnings: parseInt(data.warnings || '0', 10),
+      contents: data.contents || [],
+    };
+  } catch {
+    return {
+      status: 'UNKNOWN',
+      lastDownloaded: null,
+      errors: 0,
+      warnings: 0,
+    };
+  }
+}
+
+// Submit sitemap via official Search Console Sitemaps API
+// Automatically detects sitemap hash changes to avoid redundant submissions
+export async function submitSitemap(property, sitemapUrl, accessToken, force = false) {
+  const token = accessToken || (await getValidAccessToken());
+  const encodedProperty = encodeURIComponent(property);
+  const encodedFeed = encodeURIComponent(sitemapUrl);
+  const currentHash = getLocalSitemapHash();
+  const state = loadSavedState();
+
+  // If already submitted, sitemap has not changed, and submitted within last 24h, skip redundant submission
+  if (
+    !force &&
+    state.sitemapSubmitted &&
+    state.sitemapHash &&
+    state.sitemapHash === currentHash &&
+    state.lastSubmitted &&
+    Date.now() - new Date(state.lastSubmitted).getTime() < 86400000
+  ) {
+    const statusResult = await getSitemapStatus(property, sitemapUrl, token);
+    return {
+      success: true,
+      sitemapUrl,
+      property,
+      timestamp: state.lastSubmitted,
+      status: 'SITEMAP SUBMITTED',
+      skippedRedundant: true,
+      lastDownloaded: statusResult.lastDownloaded,
+      message: 'Sitemap unchanged and previously submitted within 24h. Active in Google Search Console.',
+    };
+  }
 
   const response = await fetch(
     `https://www.googleapis.com/webmasters/v3/sites/${encodedProperty}/sitemaps/${encodedFeed}`,
@@ -545,6 +619,7 @@ export async function submitSitemap(property, sitemapUrl, accessToken) {
   saveState({
     selectedProperty: property,
     sitemapSubmitted: true,
+    sitemapHash: currentHash,
     lastSubmitted: timestamp,
   });
 

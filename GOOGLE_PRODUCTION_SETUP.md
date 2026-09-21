@@ -44,7 +44,22 @@ To maintain strict security:
 
 ---
 
-## 3. Google Auth Platform Configuration
+## 3. Exact Production Callback URLs
+
+Configure the appropriate production HTTPS callback in [Google Cloud Console > Credentials](https://console.cloud.google.com/apis/credentials?project=portfolio-509304):
+
+| Environment | Platform | Exact Callback URL |
+| :--- | :--- | :--- |
+| **Development** | Local Server | `http://localhost:3001/api/auth/google/callback` |
+| **Production** | Vercel Serverless | `https://portfolio-seo-backend.vercel.app/api/auth/google/callback` |
+| **Production** | Render Web Service | `https://portfolio-seo-backend.onrender.com/api/auth/google/callback` |
+| **Production** | Custom Backend Domain | `https://api.yourdomain.com/api/auth/google/callback` |
+
+*Security Rule: Never use `http://` or `localhost` in production. Google rejects non-HTTPS redirect URIs on production domains.*
+
+---
+
+## 4. Google Auth Platform Configuration
 
 Follow these steps in the [Google Cloud Console](https://console.cloud.google.com/auth/overview?project=portfolio-509304):
 
@@ -52,53 +67,60 @@ Follow these steps in the [Google Cloud Console](https://console.cloud.google.co
 1. Navigate to **Google Auth Platform** > **Branding**.
 2. **App name**: `Portfolio SEO Console`
 3. **User support email**: Select your verified Google account email.
-4. **App logo**: Optional (120x120px square image).
-5. **Application home page**: `https://shivam349.github.io/portfolio`
-6. **Authorized domains**:
+4. **Application home page**: `https://shivam349.github.io/portfolio`
+5. **Authorized domains**:
    - `github.io`
-   - (Add custom domain if applicable, e.g. `yourdomain.com`)
-7. **Developer contact information**: Your contact email address.
+   - `vercel.app` (or your backend domain)
+6. **Developer contact information**: Your contact email address.
 
 ### B. Audience & Publishing Status
 1. Navigate to **Google Auth Platform** > **Audience**.
 2. **User Type**: **External**
 3. **Publishing Status**:
-   - **Testing Mode**: While testing, you must add your Google email address under **Test Users**. Only added test users can authorize the application.
-   - **In Production**: When ready for clients, click **Publish App**. Because the app requests sensitive Search Console scopes, Google may request verification if used by external non-test accounts. For client portfolios you manage directly, adding client emails as test users allows immediate authorization without waiting for Google verification.
+   - **Testing Mode**: While testing, add your Google account email under **Test Users**.
+   - **In Production**: When ready for broad distribution, click **Publish App**.
 
 ### C. Data Access (Scopes)
 1. Navigate to **Google Auth Platform** > **Data Access**.
-2. Click **Add or Remove Scopes** and add:
+2. Add:
    - `https://www.googleapis.com/auth/webmasters`
    - `https://www.googleapis.com/auth/siteverification`
    - `https://www.googleapis.com/auth/userinfo.email`
-3. Click **Update** and **Save**.
-
-### D. OAuth Client ID & Redirect URIs
-1. Navigate to **APIs & Services** > **Credentials**.
-2. Open OAuth 2.0 Client ID: `1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com`.
-3. Under **Authorized redirect URIs**, configure:
-   - **Development**:
-     ```text
-     http://localhost:3001/api/auth/google/callback
-     ```
-   - **Production Backend**:
-     ```text
-     https://your-backend-host.vercel.app/api/auth/google/callback
-     ```
-   *(Note: Never configure `http://` for production. Google requires HTTPS for production redirect URIs)*
 
 ---
 
-## 4. Multi-Client & Multi-Website Architecture
+## 5. Free-Tier Backend Deployment Options
 
-You do **not** need a separate Google Cloud project or OAuth client for every client website. A single OAuth client supports unlimited websites.
+### Option 1: Vercel Serverless (Zero Config)
+This repository includes `vercel.json` and `api/index.js`.
+1. Push to GitHub: `git push origin master`.
+2. In [Vercel](https://vercel.com/new), import `shivam349/portfolio`.
+3. Set environment variables:
+   - `GOOGLE_PROJECT_ID`: `portfolio-509304`
+   - `GOOGLE_CLIENT_ID`: `1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com`
+   - `GOOGLE_CLIENT_SECRET`: Your secret
+   - `GOOGLE_REDIRECT_URI`: `https://portfolio-seo-backend.vercel.app/api/auth/google/callback`
+   - `GOOGLE_ENCRYPTION_KEY`: `1d908eb4b5245e086840a23cba2a4fd411461a1445d2803eae7d853aa96c7215`
+   - `SITE_URL`: `https://shivam349.github.io/portfolio`
+4. Deploy!
 
-### Secure Connection Model
-Each authorized client website is stored securely in `.gsc-connections.json`:
+### Option 2: Render Free Web Service
+This repository includes `render.yaml`.
+1. In [Render Dashboard](https://dashboard.render.com/), select **New > Blueprint**.
+2. Connect `shivam349/portfolio`.
+3. Add the required environment variables.
+4. Render automatically provisions the HTTPS service at `https://portfolio-seo-backend.onrender.com`.
+
+---
+
+## 6. Multi-Client & Multi-Website Architecture
+
+One Google OAuth application supports any number of client websites.
+
+### Connection Model (`.gsc-connections.json`)
 ```json
 {
-  "connection_id": "uuid-v4",
+  "connection_id": "c71e80b2-4d1a-4d26-9f44-9645eb488f72",
   "google_account_identifier": "client@gmail.com",
   "encrypted_refresh_token": "<iv>:<auth_tag>:<encrypted_token>",
   "site_url": "https://clientdomain.com",
@@ -106,50 +128,28 @@ Each authorized client website is stored securely in `.gsc-connections.json`:
   "permission_level": "siteOwner",
   "is_verified": true,
   "sitemap_submitted": true,
-  "last_submitted": "2026-09-21T05:00:00.000Z",
-  "created_at": "2026-09-21T05:00:00.000Z",
-  "updated_at": "2026-09-21T05:00:00.000Z"
+  "last_submitted": "2026-09-21T05:20:00.000Z",
+  "created_at": "2026-09-21T05:20:00.000Z",
+  "updated_at": "2026-09-21T05:20:00.000Z"
 }
 ```
 
-- Refresh tokens are encrypted using **AES-256-GCM** with a 32-byte key (`GOOGLE_ENCRYPTION_KEY`).
-- Refresh tokens are **never** exposed over API responses or client-side JavaScript.
+- Refresh tokens are encrypted with **AES-256-GCM** using `GOOGLE_ENCRYPTION_KEY`.
+- Refresh tokens are **never** exposed to client-side code or API responses.
 
 ---
 
-## 5. Environment Variables & Secrets Reference
+## 7. Official 8-State Classification Reference
 
-### Local Development (`.env.local`)
-```env
-SITE_URL=https://shivam349.github.io/portfolio
-GOOGLE_PROJECT_ID=portfolio-509304
-GOOGLE_CLIENT_ID=1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=<your_google_client_secret>
-GOOGLE_REDIRECT_URI=http://localhost:3001/api/auth/google/callback
-GOOGLE_ENCRYPTION_KEY=1d908eb4b5245e086840a23cba2a4fd411461a1445d2803eae7d853aa96c7215
-NEXT_PUBLIC_SEO_BACKEND_URL=http://localhost:3001
-```
+Google Search Console statuses are strictly maintained and never faked:
 
-### GitHub Actions Secrets (for automated CI/CD sitemap submission)
-In **Repository Settings** > **Secrets and variables** > **Actions**:
-- `GOOGLE_CLIENT_ID`: `1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com`
-- `GOOGLE_CLIENT_SECRET`: Your Google Cloud client secret
-- `GOOGLE_REFRESH_TOKEN`: The refresh token generated during first login
-
----
-
-## 6. Verification and Health Check Commands
-
-```bash
-# 1. Check Google Cloud & production configuration
-npm run google:check
-
-# 2. Check technical SEO compliance (robots.txt, sitemap, canonical, metadata)
-npm run seo:check
-
-# 3. Output comprehensive SEO and Indexing report
-npm run seo:report
-
-# 4. Start local development runner (Next.js :3000 + SEO server :3001)
-npm run dev
-```
+| State | Definition | Official Google Basis |
+| :--- | :--- | :--- |
+| **`DEPLOYED`** | Public site is live and returns HTTP 200 | Verified via HTTP probe |
+| **`VERIFIED`** | Account has verified ownership for the property | Checked via Search Console API (`siteOwner` / `siteFullUser`) |
+| **`SITEMAP SUBMITTED`** | `/sitemap.xml` was transmitted to Google | Confirmed via Search Console Sitemaps API (`PUT`) |
+| **`DISCOVERED`** | Googlebot detected URLs in the sitemap | Reported by URL Inspection / Search Console |
+| **`CRAWLED`** | Googlebot fetched the page; indexing pending | URL Inspection API `coverageState` |
+| **`INDEXED`** | Page is actively indexed in Google Search | URL Inspection API verdict `PASS` |
+| **`NOT INDEXED`** | Page excluded (noindex, redirect, crawl issue) | URL Inspection API verdict `FAIL` |
+| **`UNKNOWN`** | No crawl or inspection data available yet | Default state before Googlebot crawl |

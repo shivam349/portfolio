@@ -72,7 +72,25 @@ async function runSync() {
     const sitemapUrl = `${config.siteUrl}/sitemap.xml`;
     console.log(`Submitting sitemap: ${sitemapUrl}...`);
     const submission = await submitSitemap(targetProperty, sitemapUrl, accessToken);
-    console.log(`✓ SITEMAP SUBMITTED successfully at ${submission.timestamp}`);
+    if (submission.skippedRedundant) {
+      console.log(`✓ SITEMAP UP TO DATE: ${submission.message}`);
+    } else {
+      console.log(`✓ SITEMAP SUBMITTED successfully at ${submission.timestamp}`);
+    }
+
+    // Retrieve sitemap processing status from Search Console
+    console.log('Retrieving Search Console sitemap status...');
+    const sitemapStatus = await getSitemapStatus(targetProperty, sitemapUrl, accessToken);
+    console.log(`Sitemap Processing Status: ${sitemapStatus.status}`);
+    if (sitemapStatus.lastDownloaded) {
+      console.log(`Last Googlebot Download: ${sitemapStatus.lastDownloaded}`);
+    }
+    if (sitemapStatus.errors > 0) {
+      console.warn(`[!] Search Console reported ${sitemapStatus.errors} sitemap error(s).`);
+    }
+    if (sitemapStatus.warnings > 0) {
+      console.warn(`[!] Search Console reported ${sitemapStatus.warnings} sitemap warning(s).`);
+    }
 
     console.log('Checking indexing status...');
     const homepageInspection = await inspectUrl(targetProperty, config.siteUrl, accessToken);
