@@ -8,12 +8,15 @@ import {
   loadSavedState,
   saveState,
   clearState,
+  getConnectionForSite,
+  saveConnectionForSite,
   generateOAuthUrl,
   exchangeCode,
-  getValidAccessToken,
   listProperties,
   findMatchingProperty,
   verifyProperty,
+  requestSiteVerificationToken,
+  verifyWebResource,
   submitSitemap,
   inspectUrl,
   getShortcuts,
@@ -56,6 +59,11 @@ async function parseBody(req) {
   });
 }
 
+function getFrontendRedirectBase() {
+  const isDev = !config.isProd && config.redirectUri.includes('localhost');
+  return isDev ? 'http://localhost:3000' : config.siteUrl;
+}
+
 const server = http.createServer(async (req, res) => {
   setCors(res);
 
@@ -72,24 +80,36 @@ const server = http.createServer(async (req, res) => {
     // 1. Status Check
     if (pathname === '/api/seo/status' && req.method === 'GET') {
       const state = loadSavedState();
+      const siteConn = getConnectionForSite(config.siteUrl);
+
       const hasTokens = Boolean(
-        state.tokens && (state.tokens.access_token || state.tokens.refresh_token)
+        (state.tokens && (state.tokens.access_token || state.tokens.refresh_token)) ||
+        siteConn?.encrypted_refresh_token
       );
+
+      const selectedProp = siteConn?.search_console_property || state.selectedProperty || null;
+      const isVerified = Boolean(siteConn?.is_verified ?? state.isVerified);
+      const isSubmitted = Boolean(siteConn?.sitemap_submitted ?? state.sitemapSubmitted);
+      const lastSubmitted = siteConn?.last_submitted || state.lastSubmitted || null;
 
       const status = {
         connected: hasTokens,
-        selectedProperty: state.selectedProperty || null,
-        isVerified: Boolean(state.isVerified),
-        sitemapSubmitted: Boolean(state.sitemapSubmitted),
-        lastSubmitted: state.lastSubmitted || null,
+        googleAccount: siteConn?.google_account_identifier || 'Connected Google Account',
+        selectedProperty: selectedProp,
+        permissionLevel: siteConn?.permission_level || (isVerified ? 'siteOwner' : 'none'),
+        isVerified,
+        sitemapSubmitted: isSubmitted,
+        lastSubmitted,
         siteUrl: config.siteUrl,
         hasCredentials: Boolean(config.clientId && config.clientSecret),
+        environment: config.isProd ? 'production' : 'development',
+        redirectUri: config.redirectUri,
         indexing: state.indexing || {
           homepage: 'UNKNOWN',
           projects: 'UNKNOWN',
           about: 'UNKNOWN',
         },
-        shortcuts: getShortcuts(state.selectedProperty || config.siteUrl),
+        shortcuts: getShortcuts(selectedProp || config.siteUrl),
       };
 
       return jsonResponse(res, 200, status);
@@ -98,6 +118,13 @@ const server = http.createServer(async (req, res) => {
     // 2. Start Google OAuth
     if (pathname === '/api/auth/google' && req.method === 'GET') {
       try {
+        // Validate production redirect URI is HTTPS
+        if (config.isProd && !config.redirectUri.startsWith('https://')) {
+          return jsonResponse(res, 400, {
+            error: `Production redirect URI must use HTTPS: ${config.redirectUri}`,
+          });
+        }
+
         const authUrl = generateOAuthUrl();
         res.writeHead(302, { Location: authUrl });
         res.end();
@@ -112,10 +139,11 @@ const server = http.createServer(async (req, res) => {
       const code = reqUrl.searchParams.get('code');
       const state = reqUrl.searchParams.get('state');
       const error = reqUrl.searchParams.get('error');
+      const frontendBase = getFrontendRedirectBase();
 
       if (error) {
         res.writeHead(302, {
-          Location: `http://localhost:3000/admin/seo?error=${encodeURIComponent(error)}`,
+          Location: `${frontendBase}/admin/seo?error=${encodeURIComponent(error)}`,
         });
         res.end();
         return;
@@ -126,28 +154,32 @@ const server = http.createServer(async (req, res) => {
       }
 
       try {
-        const tokens = await exchangeCode(code, state);
+        const { tokens, googleAccount } = await exchangeCode(code, state);
 
-        // Automatically discover properties on connect
+        // Auto-discover properties on connect
         try {
           const properties = await listProperties(tokens.access_token);
           const matched = findMatchingProperty(properties, config.siteUrl);
           if (matched) {
             saveState({ selectedProperty: matched });
-            await verifyProperty(matched, tokens.access_token);
+            const verification = await verifyProperty(matched, tokens.access_token);
+            saveConnectionForSite(config.siteUrl, {
+              google_account_identifier: googleAccount,
+              search_console_property: matched,
+              permission_level: verification.permissionLevel,
+              is_verified: verification.verified,
+            });
           }
-        } catch {
-          // Non-fatal, property can be selected manually
-        }
+        } catch {}
 
         res.writeHead(302, {
-          Location: 'http://localhost:3000/admin/seo?connected=true',
+          Location: `${frontendBase}/admin/seo?connected=true`,
         });
         res.end();
         return;
       } catch (err) {
         res.writeHead(302, {
-          Location: `http://localhost:3000/admin/seo?error=${encodeURIComponent(err.message)}`,
+          Location: `${frontendBase}/admin/seo?error=${encodeURIComponent(err.message)}`,
         });
         res.end();
         return;
@@ -156,10 +188,10 @@ const server = http.createServer(async (req, res) => {
 
     // 4. Disconnect Google
     if (pathname === '/api/auth/google/disconnect' && req.method === 'POST') {
-      clearState();
+      clearState(config.siteUrl);
       return jsonResponse(res, 200, {
         success: true,
-        message: 'Google account disconnected and tokens removed.',
+        message: 'Google account disconnected and tokens safely removed.',
       });
     }
 
@@ -196,44 +228,71 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 7. Verify Ownership
+    // 7. Verify Ownership via Search Console
     if (pathname === '/api/seo/verify' && req.method === 'POST') {
       const state = loadSavedState();
-      const property = state.selectedProperty || config.siteUrl;
+      const siteConn = getConnectionForSite(config.siteUrl);
+      const property = siteConn?.search_console_property || state.selectedProperty || config.siteUrl;
 
       const verification = await verifyProperty(property);
       return jsonResponse(res, 200, verification);
     }
 
-    // 8. Submit Sitemap
+    // 8. Request Google Site Verification Token (Site Verification API)
+    if (pathname === '/api/seo/verify/token' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const method = body.method || 'META'; // META or FILE
+      try {
+        const tokenResult = await requestSiteVerificationToken(config.siteUrl, method);
+        return jsonResponse(res, 200, tokenResult);
+      } catch (err) {
+        return jsonResponse(res, 500, { error: err.message });
+      }
+    }
+
+    // 9. Confirm Site Verification (Site Verification API)
+    if (pathname === '/api/seo/verify/webResource' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const method = body.method || 'META';
+      try {
+        const result = await verifyWebResource(config.siteUrl, method);
+        if (result.verified) {
+          saveState({ isVerified: true });
+          saveConnectionForSite(config.siteUrl, { is_verified: true });
+        }
+        return jsonResponse(res, 200, result);
+      } catch (err) {
+        return jsonResponse(res, 500, { error: err.message });
+      }
+    }
+
+    // 10. Submit Sitemap
     if (pathname === '/api/seo/sitemap' && req.method === 'POST') {
       const state = loadSavedState();
-      if (!state.selectedProperty) {
+      const siteConn = getConnectionForSite(config.siteUrl);
+      const property = siteConn?.search_console_property || state.selectedProperty;
+
+      if (!property) {
         return jsonResponse(res, 400, {
           error: 'No Search Console property selected. Select a property first.',
         });
       }
-      if (!state.isVerified) {
-        return jsonResponse(res, 400, {
-          error: 'Search Console property is not verified. Verify ownership before submitting sitemap.',
-        });
-      }
 
       const sitemapUrl = `${config.siteUrl}/sitemap.xml`;
-      const result = await submitSitemap(state.selectedProperty, sitemapUrl);
+      const result = await submitSitemap(property, sitemapUrl);
       return jsonResponse(res, 200, result);
     }
 
-    // 9. Inspect URL
+    // 11. Inspect URL
     if (pathname === '/api/seo/inspect' && req.method === 'POST') {
       const body = await parseBody(req);
       const state = loadSavedState();
+      const siteConn = getConnectionForSite(config.siteUrl);
       const targetUrl = body.url || config.siteUrl;
-      const property = state.selectedProperty || config.siteUrl;
+      const property = siteConn?.search_console_property || state.selectedProperty || config.siteUrl;
 
       const result = await inspectUrl(property, targetUrl);
 
-      // Update stored indexing record if inspected
       if (result.status && result.status !== 'UNKNOWN') {
         const currentIndexing = state.indexing || {};
         if (targetUrl === config.siteUrl || targetUrl === `${config.siteUrl}/`) {
@@ -249,7 +308,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 10. Run Full One-Click SEO Setup
+    // 12. Run Full One-Click SEO Setup
     if (pathname === '/api/seo/setup' && req.method === 'POST') {
       const steps = [];
 
@@ -295,24 +354,29 @@ const server = http.createServer(async (req, res) => {
 
       // Step 5: Google Connected
       const state = loadSavedState();
+      const siteConn = getConnectionForSite(config.siteUrl);
       const isConnected = Boolean(
-        state.tokens && (state.tokens.access_token || state.tokens.refresh_token)
+        (state.tokens && (state.tokens.access_token || state.tokens.refresh_token)) ||
+        siteConn?.encrypted_refresh_token
       );
       steps.push({
         id: 'google',
         title: 'Google connected',
         status: isConnected ? 'completed' : 'pending',
-        detail: isConnected ? 'OAuth 2.0 active' : 'Google account not connected yet',
+        detail: isConnected
+          ? `Connected (${siteConn?.google_account_identifier || 'OAuth 2.0 active'})`
+          : 'Google account not connected yet',
       });
 
       // Step 6: Property Selected
-      let selectedProp = state.selectedProperty;
+      let selectedProp = siteConn?.search_console_property || state.selectedProperty;
       if (isConnected && !selectedProp) {
         try {
           const props = await listProperties();
           selectedProp = findMatchingProperty(props, config.siteUrl);
           if (selectedProp) {
             saveState({ selectedProperty: selectedProp });
+            saveConnectionForSite(config.siteUrl, { search_console_property: selectedProp });
           }
         } catch {}
       }
@@ -324,8 +388,8 @@ const server = http.createServer(async (req, res) => {
       });
 
       // Step 7: Property Verified
-      let isVerified = state.isVerified;
-      if (isConnected && selectedProp) {
+      let isVerified = siteConn?.is_verified ?? state.isVerified;
+      if (isConnected && selectedProp && !isVerified) {
         try {
           const v = await verifyProperty(selectedProp);
           isVerified = v.verified;
@@ -339,7 +403,7 @@ const server = http.createServer(async (req, res) => {
       });
 
       // Step 8: Sitemap Submitted
-      let sitemapSubmitted = state.sitemapSubmitted;
+      let sitemapSubmitted = siteConn?.sitemap_submitted ?? state.sitemapSubmitted;
       if (isConnected && selectedProp && isVerified && !sitemapSubmitted) {
         try {
           await submitSitemap(selectedProp, `${config.siteUrl}/sitemap.xml`);
@@ -369,6 +433,7 @@ const server = http.createServer(async (req, res) => {
         summary: {
           siteUrl: config.siteUrl,
           connected: isConnected,
+          googleAccount: siteConn?.google_account_identifier || 'Google Account',
           property: selectedProp,
           verified: isVerified,
           sitemapSubmitted,
@@ -386,4 +451,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`[SEO Admin Server] Running on http://localhost:${PORT}`);
+  console.log(`[SEO Admin Server] Mode: ${config.isProd ? 'Production' : 'Development'}`);
+  console.log(`[SEO Admin Server] Target Site: ${config.siteUrl}`);
+  console.log(`[SEO Admin Server] Redirect URI: ${config.redirectUri}`);
 });

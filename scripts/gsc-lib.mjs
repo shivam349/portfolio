@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
 const TOKENS_FILE = path.join(rootDir, '.gsc-tokens.json');
+const CONNECTIONS_FILE = path.join(rootDir, '.gsc-connections.json');
 
 // Load environment variables from .env.local if present
 export function loadEnv() {
@@ -27,6 +28,43 @@ export function loadEnv() {
   }
 }
 
+// Derive a 32-byte AES key from GOOGLE_ENCRYPTION_KEY or fallback
+function getEncryptionKey() {
+  loadEnv();
+  const rawKey = process.env.GOOGLE_ENCRYPTION_KEY || 'default-fallback-portfolio-key-32b';
+  if (rawKey.length === 64 && /^[0-9a-fA-F]+$/.test(rawKey)) {
+    return Buffer.from(rawKey, 'hex');
+  }
+  return crypto.createHash('sha256').update(rawKey).digest();
+}
+
+// AES-256-GCM symmetric encryption for tokens at rest
+export function encryptText(plainText) {
+  if (!plainText) return '';
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+export function decryptText(cipherText) {
+  if (!cipherText || !cipherText.includes(':')) return '';
+  try {
+    const [ivHex, tagHex, encryptedHex] = cipherText.split(':');
+    const key = getEncryptionKey();
+    const iv = Buffer.from(ivHex, 'hex');
+    const tag = Buffer.from(tagHex, 'hex');
+    const encrypted = Buffer.from(encryptedHex, 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return decipher.update(encrypted, undefined, 'utf8') + decipher.final('utf8');
+  } catch {
+    return '';
+  }
+}
+
 export function getConfig() {
   loadEnv();
   const rawSiteUrl =
@@ -35,16 +73,78 @@ export function getConfig() {
     'https://shivam349.github.io/portfolio';
 
   const siteUrl = rawSiteUrl.replace(/\/+$/, '');
+  const isProd = process.env.NODE_ENV === 'production' || process.env.GITHUB_ACTIONS === 'true';
 
   return {
     siteUrl,
+    isProd,
+    projectId: process.env.GOOGLE_PROJECT_ID || 'portfolio-509304',
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
     redirectUri:
       process.env.GOOGLE_REDIRECT_URI ||
       'http://localhost:3001/api/auth/google/callback',
     apiPort: parseInt(process.env.SEO_ADMIN_PORT || '3001', 10),
+    backendUrl:
+      process.env.NEXT_PUBLIC_SEO_BACKEND_URL ||
+      'http://localhost:3001',
   };
+}
+
+// Multi-client connection repository
+export function loadAllConnections() {
+  if (!fs.existsSync(CONNECTIONS_FILE)) {
+    return [];
+  }
+  try {
+    return JSON.parse(fs.readFileSync(CONNECTIONS_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
+}
+
+export function saveAllConnections(connections) {
+  fs.writeFileSync(CONNECTIONS_FILE, JSON.stringify(connections, null, 2), 'utf8');
+}
+
+export function getConnectionForSite(siteUrl) {
+  const normalized = siteUrl.replace(/\/+$/, '').toLowerCase();
+  const connections = loadAllConnections();
+  return connections.find(
+    (c) => c.site_url.replace(/\/+$/, '').toLowerCase() === normalized
+  ) || null;
+}
+
+export function saveConnectionForSite(siteUrl, connectionData) {
+  const normalized = siteUrl.replace(/\/+$/, '');
+  const connections = loadAllConnections();
+  const index = connections.findIndex(
+    (c) => c.site_url.replace(/\/+$/, '').toLowerCase() === normalized.toLowerCase()
+  );
+
+  const existing = index >= 0 ? connections[index] : null;
+  const updated = {
+    connection_id: existing?.connection_id || crypto.randomUUID(),
+    google_account_identifier: connectionData.google_account_identifier || existing?.google_account_identifier || 'unknown',
+    encrypted_refresh_token: connectionData.encrypted_refresh_token || existing?.encrypted_refresh_token || '',
+    site_url: normalized,
+    search_console_property: connectionData.search_console_property ?? existing?.search_console_property ?? null,
+    permission_level: connectionData.permission_level ?? existing?.permission_level ?? 'none',
+    is_verified: connectionData.is_verified ?? existing?.is_verified ?? false,
+    sitemap_submitted: connectionData.sitemap_submitted ?? existing?.sitemap_submitted ?? false,
+    last_submitted: connectionData.last_submitted ?? existing?.last_submitted ?? null,
+    created_at: existing?.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (index >= 0) {
+    connections[index] = updated;
+  } else {
+    connections.push(updated);
+  }
+
+  saveAllConnections(connections);
+  return updated;
 }
 
 export function loadSavedState() {
@@ -93,25 +193,35 @@ export function saveState(stateUpdates) {
   return updated;
 }
 
-export function clearState() {
+export function clearState(siteUrl) {
   if (fs.existsSync(TOKENS_FILE)) {
     fs.unlinkSync(TOKENS_FILE);
+  }
+  if (siteUrl) {
+    const connections = loadAllConnections();
+    const filtered = connections.filter(
+      (c) => c.site_url.replace(/\/+$/, '').toLowerCase() !== siteUrl.replace(/\/+$/, '').toLowerCase()
+    );
+    saveAllConnections(filtered);
   }
   return loadSavedState();
 }
 
+// Google OAuth URL generation with CSRF state & required production scopes
 export function generateOAuthUrl() {
   const config = getConfig();
   if (!config.clientId) {
-    throw new Error('GOOGLE_CLIENT_ID is not configured in .env.local');
+    throw new Error('GOOGLE_CLIENT_ID is not configured');
   }
 
   const csrfState = crypto.randomBytes(24).toString('hex');
   saveState({ csrfState });
 
+  // Official Scopes: Search Console, Site Verification, User Profile email
   const scopes = [
-    'https://www.googleapis.com/auth/webmasters.readonly',
     'https://www.googleapis.com/auth/webmasters',
+    'https://www.googleapis.com/auth/siteverification',
+    'https://www.googleapis.com/auth/userinfo.email',
   ].join(' ');
 
   const params = new URLSearchParams({
@@ -127,6 +237,21 @@ export function generateOAuthUrl() {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
+// Fetch Google Account email identifier
+export async function getGoogleUserIdentifier(accessToken) {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.email || data.id || 'Google User';
+    }
+  } catch {}
+  return 'Google User';
+}
+
+// OAuth code exchange
 export async function exchangeCode(code, returnedState) {
   const config = getConfig();
   const state = loadSavedState();
@@ -149,7 +274,7 @@ export async function exchangeCode(code, returnedState) {
 
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Google OAuth token exchange failed: ${response.status} - ${errorBody}`);
+    throw new Error(`Google OAuth token exchange failed (${response.status}): ${errorBody}`);
   }
 
   const tokenData = await response.json();
@@ -167,22 +292,34 @@ export async function exchangeCode(code, returnedState) {
   };
 
   saveState({ tokens, csrfState: null });
-  return tokens;
+
+  // Multi-client connection persistence
+  const googleAccount = await getGoogleUserIdentifier(tokenData.access_token);
+  if (refreshToken) {
+    saveConnectionForSite(config.siteUrl, {
+      google_account_identifier: googleAccount,
+      encrypted_refresh_token: encryptText(refreshToken),
+    });
+  }
+
+  return { tokens, googleAccount };
 }
 
+// Access token retrieval & automatic refresh
 export async function getValidAccessToken() {
   const config = getConfig();
   const state = loadSavedState();
+  const siteConn = getConnectionForSite(config.siteUrl);
 
-  // Allow refresh token override from environment (e.g. GitHub Actions secret)
   const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
-  const refreshToken = envRefreshToken || state.tokens?.refresh_token;
+  const decryptedConnToken = siteConn?.encrypted_refresh_token ? decryptText(siteConn.encrypted_refresh_token) : null;
+  const refreshToken = envRefreshToken || decryptedConnToken || state.tokens?.refresh_token;
 
   if (!state.tokens?.access_token && !refreshToken) {
     throw new Error('Google Search Console is not connected. Connect via OAuth first.');
   }
 
-  // Check if current token has at least 60 seconds remaining
+  // Use cached access token if valid for > 60s
   if (state.tokens?.access_token && state.tokens.expires_at > Date.now() + 60000) {
     return state.tokens.access_token;
   }
@@ -191,7 +328,6 @@ export async function getValidAccessToken() {
     throw new Error('Google OAuth access token expired and no refresh token is available. Reconnect Google.');
   }
 
-  // Fetch new access token using refresh_token
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -223,6 +359,7 @@ export async function getValidAccessToken() {
   return newTokens.access_token;
 }
 
+// List Search Console properties
 export async function listProperties(accessToken) {
   const token = accessToken || (await getValidAccessToken());
 
@@ -245,6 +382,7 @@ export async function listProperties(accessToken) {
   return data.siteEntry || [];
 }
 
+// Accurate property matching without guessing
 export function findMatchingProperty(properties, siteUrl) {
   if (!properties || properties.length === 0) return null;
 
@@ -252,7 +390,7 @@ export function findMatchingProperty(properties, siteUrl) {
   const parsed = new URL(normalizedSiteUrl);
   const hostname = parsed.hostname.toLowerCase();
 
-  // 1. Exact match with trailing slash
+  // 1. Exact match with or without slash
   const exactSlash = `${normalizedSiteUrl}/`;
   const exactMatch = properties.find(
     (p) =>
@@ -277,6 +415,7 @@ export function findMatchingProperty(properties, siteUrl) {
   return null;
 }
 
+// Verify property ownership via Search Console API
 export async function verifyProperty(property, accessToken) {
   const token = accessToken || (await getValidAccessToken());
   const encodedProperty = encodeURIComponent(property);
@@ -302,6 +441,11 @@ export async function verifyProperty(property, accessToken) {
     data.permissionLevel === 'siteFullUser';
 
   saveState({ selectedProperty: property, isVerified });
+  saveConnectionForSite(getConfig().siteUrl, {
+    search_console_property: property,
+    permission_level: data.permissionLevel,
+    is_verified: isVerified,
+  });
 
   return {
     verified: isVerified,
@@ -312,6 +456,73 @@ export async function verifyProperty(property, accessToken) {
   };
 }
 
+// Google Site Verification API (automated verification token & webResource)
+export async function requestSiteVerificationToken(siteUrl, method = 'META', accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+
+  const response = await fetch('https://www.googleapis.com/siteVerification/v1/token', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      verificationMethod: method,
+      site: {
+        type: 'SITE',
+        identifier: siteUrl,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Site Verification token request failed (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return {
+    method,
+    token: data.token,
+  };
+}
+
+export async function verifyWebResource(siteUrl, method = 'META', accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+
+  const response = await fetch(
+    `https://www.googleapis.com/siteVerification/v1/webResource?verificationMethod=${encodeURIComponent(method)}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        site: {
+          type: 'SITE',
+          identifier: siteUrl,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    return {
+      verified: false,
+      error: `Site Verification pending (${response.status}): ${errorBody}`,
+    };
+  }
+
+  const data = await response.json();
+  return {
+    verified: true,
+    data,
+  };
+}
+
+// Submit sitemap via official Search Console Sitemaps API
 export async function submitSitemap(property, sitemapUrl, accessToken) {
   const token = accessToken || (await getValidAccessToken());
   const encodedProperty = encodeURIComponent(property);
@@ -337,6 +548,12 @@ export async function submitSitemap(property, sitemapUrl, accessToken) {
     lastSubmitted: timestamp,
   });
 
+  saveConnectionForSite(getConfig().siteUrl, {
+    search_console_property: property,
+    sitemap_submitted: true,
+    last_submitted: timestamp,
+  });
+
   return {
     success: true,
     sitemapUrl,
@@ -346,6 +563,7 @@ export async function submitSitemap(property, sitemapUrl, accessToken) {
   };
 }
 
+// Inspect URL indexing status via Search Console URL Inspection API
 export async function inspectUrl(property, targetUrl, accessToken) {
   const token = accessToken || (await getValidAccessToken());
 
@@ -410,5 +628,6 @@ export function getShortcuts(property) {
     sitemaps: `https://search.google.com/search-console/sitemaps${property ? `?resource_id=${encoded}` : ''}`,
     urlInspection: `https://search.google.com/search-console/inspect${property ? `?resource_id=${encoded}` : ''}`,
     propertySettings: `https://search.google.com/search-console/settings${property ? `?resource_id=${encoded}` : ''}`,
+    ownershipVerification: `https://search.google.com/search-console/ownership${property ? `?resource_id=${encoded}` : ''}`,
   };
 }

@@ -18,7 +18,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:3001';
+const API_BASE = process.env.NEXT_PUBLIC_SEO_BACKEND_URL || 'http://localhost:3001';
 
 const STEPS = [
   { id: 1, name: 'Website Configuration' },

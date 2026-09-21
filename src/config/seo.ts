@@ -48,13 +48,10 @@ export const seoConfig = {
 
   // Google Search Console settings
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
   googleRedirectUri:
     process.env.GOOGLE_REDIRECT_URI ||
-    'http://localhost:3000/api/auth/google/callback',
+    'http://localhost:3001/api/auth/google/callback',
   gscPropertyId: process.env.GSC_PROPERTY_ID || '',
-  seoSecretKey:
-    process.env.SEO_SECRET_KEY || 'default-portfolio-seo-encryption-key-32ch',
 
   // Excluded paths from indexing/sitemap
   excludedPaths: [

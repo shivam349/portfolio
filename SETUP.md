@@ -2,6 +2,8 @@
 
 This guide provides step-by-step instructions for deploying, customizing, and automating the SEO & Google Search Console (GSC) integration for this portfolio.
 
+For detailed Google Cloud configuration and production architecture, see [GOOGLE_PRODUCTION_SETUP.md](GOOGLE_PRODUCTION_SETUP.md).
+
 ---
 
 ## Architecture & Automation Matrix
@@ -34,19 +36,30 @@ Copy `.env.example` to `.env.local`:
 cp .env.example .env.local
 ```
 
-Edit `.env.local` to match your production domain and details:
+Configure your credentials in `.env.local`:
 ```env
 SITE_URL=https://shivam349.github.io/portfolio
+NEXT_PUBLIC_SITE_URL=https://shivam349.github.io/portfolio
 SITE_NAME=Shivam - AI & Full Stack Portfolio
 OWNER_NAME=Shivam
 OWNER_ROLE=Full Stack & Three.js Engineer
 DESCRIPTION=Portfolio of Shivam - Software Engineer specializing in 3D Web, React, and Full Stack Architecture.
 OG_IMAGE=https://shivam349.github.io/portfolio/og-image.png
+
+# Google Cloud OAuth 2.0 Credentials (portfolio-509304)
+GOOGLE_PROJECT_ID=portfolio-509304
+GOOGLE_CLIENT_ID=1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+GOOGLE_REDIRECT_URI=http://localhost:3001/api/auth/google/callback
+GOOGLE_ENCRYPTION_KEY=1d908eb4b5245e086840a23cba2a4fd411461a1445d2803eae7d853aa96c7215
+NEXT_PUBLIC_SEO_BACKEND_URL=http://localhost:3001
 ```
 
-### 3. Validate Local SEO
-Run the automated test suite:
+### 3. Validate Google & SEO Readiness
 ```bash
+# Verify Google Cloud OAuth, scopes, and API endpoints
+npm run google:check
+
 # Build SEO assets (sitemap.xml, robots.txt)
 npm run seo:build
 
@@ -61,51 +74,22 @@ npm run seo:report
 
 ## 2. Google Cloud & Search Console API Setup
 
-To enable automated sitemap submission and indexing status inspection, configure an official Google Cloud OAuth application:
+### Step 1: Google Cloud Project
+- **Project ID**: `portfolio-509304`
+- **APIs to Enable**:
+  - **Google Search Console API**
+  - **Google Site Verification API**
 
-### Step 1: Create a Google Cloud Project
-1. Visit the [Google Cloud Console](https://console.cloud.google.com/).
-2. Click **Select a project** > **New Project**.
-3. Name your project (e.g. `Portfolio-SEO-Automation`) and click **Create**.
+### Step 2: OAuth 2.0 Scopes
+Configure these required scopes in **Google Auth Platform > Data Access**:
+- `https://www.googleapis.com/auth/webmasters`
+- `https://www.googleapis.com/auth/siteverification`
+- `https://www.googleapis.com/auth/userinfo.email`
 
-### Step 2: Enable Google Search Console API
-1. In Google Cloud Console, navigate to **APIs & Services** > **Library**.
-2. Search for **Google Search Console API** (Webmasters API).
-3. Click **Enable**.
-
-### Step 3: Configure OAuth Consent Screen
-1. Go to **APIs & Services** > **OAuth consent screen**.
-2. Select User Type: **External** > Click **Create**.
-3. Fill in:
-   - **App name**: `Portfolio SEO Console`
-   - **User support email**: Your email
-   - **Developer contact information**: Your email
-4. Click **Save and Continue**.
-5. In **Scopes**, click **Add or Remove Scopes** and add:
-   - `https://www.googleapis.com/auth/webmasters.readonly`
-   - `https://www.googleapis.com/auth/webmasters`
-6. Under **Test Users**, add your personal Google account email (required while app is in Testing mode).
-7. Save and finish.
-
-### Step 4: Create OAuth 2.0 Client Credentials
-1. Go to **APIs & Services** > **Credentials**.
-2. Click **Create Credentials** > **OAuth client ID**.
-3. Select Application type: **Web application**.
-4. Set Name: `Portfolio SEO Admin`.
-5. Under **Authorized redirect URIs**, add:
-   ```text
-   http://localhost:3001/api/auth/google/callback
-   ```
-6. Click **Create**.
-7. Copy your **Client ID** and **Client Secret**.
-
-### Step 5: Save Credentials Locally
-Add the credentials to your local `.env.local`:
-```env
-GOOGLE_CLIENT_ID=your_google_client_id_here.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your_google_client_secret_here
-GOOGLE_REDIRECT_URI=http://localhost:3001/api/auth/google/callback
-```
+### Step 3: Authorized Redirect URIs
+In **APIs & Services > Credentials** for Client ID `1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com`:
+- **Development**: `http://localhost:3001/api/auth/google/callback`
+- **Production**: `https://your-backend-host.vercel.app/api/auth/google/callback`
 
 ---
 
@@ -115,21 +99,21 @@ GOOGLE_REDIRECT_URI=http://localhost:3001/api/auth/google/callback
 ```bash
 npm run dev
 ```
-*(This starts both the Next.js dev server on port `3000` and the SEO Admin API on port `3001`)*
+*(Starts Next.js on port `3000` and SEO Admin Backend on port `3001`)*
 
-1. Open your browser and navigate to:
+1. Navigate to:
    ```text
    http://localhost:3000/admin/seo
    ```
 2. Click **[RUN SEO SETUP]** or **[Connect Google Search Console]**.
-3. Sign into your Google account and approve permissions.
-4. Google redirects back to the dashboard:
-   - Your Search Console property is automatically detected.
-   - Property ownership verification is checked.
-   - `/sitemap.xml` is automatically submitted to Google!
-   - Indexing status is monitored.
+3. Sign into your Google account and grant permissions.
+4. The system automatically:
+   - Matches the website URL with your Search Console properties.
+   - Verifies property ownership.
+   - Submits `https://${SITE_URL}/sitemap.xml` directly to Google.
+   - Monitors live indexing status.
 
-Alternatively, use the guided onboarding wizard at:
+Guided step-by-step onboarding is also available at:
 ```text
 http://localhost:3000/admin/setup
 ```
@@ -138,34 +122,29 @@ http://localhost:3000/admin/setup
 
 ## 4. GitHub Actions Automated Post-Deployment Workflow
 
-This repository includes `.github/workflows/seo.yml` which triggers automatically after every production deployment.
+The automated workflow `.github/workflows/seo.yml` triggers on every production deployment:
+- Validates site availability and HTTP 200 responses.
+- Verifies `robots.txt`, `sitemap.xml`, canonical URLs, metadata, and JSON-LD.
+- Automatically submits the sitemap to Google Search Console if repository secrets are set.
 
 ### Required GitHub Secrets
-To allow GitHub Actions to submit your sitemap to Google automatically after deployment, add these secrets to your repository:
-1. Go to **GitHub Repository** > **Settings** > **Secrets and variables** > **Actions**.
-2. Click **New repository secret**:
-   - `GOOGLE_CLIENT_ID`: Your Google OAuth Client ID
-   - `GOOGLE_CLIENT_SECRET`: Your Google OAuth Client Secret
-   - `GOOGLE_REFRESH_TOKEN`: The refresh token generated during your first OAuth login (found in `.gsc-tokens.json`)
-
-*Note: If GitHub Secrets are not configured, technical SEO validation (robots.txt, sitemap.xml, canonical URLs, HTTP 200 checks) will still run and PASS, and deployment will succeed.*
+In **Settings > Secrets and variables > Actions**:
+- `GOOGLE_CLIENT_ID`: `1099105959969-si1uu7hdqbl1mv699qe7pfmen5pt2n55.apps.googleusercontent.com`
+- `GOOGLE_CLIENT_SECRET`: Your Google Cloud OAuth client secret
+- `GOOGLE_REFRESH_TOKEN`: The refresh token generated during first login (stored in `.gsc-tokens.json`)
 
 ---
 
 ## 5. Client Reusability & Custom Domain Migration
 
-When reusing this template for a client or migrating from GitHub Pages to a custom domain:
-
 1. **Update `.env.local`**:
-   Change `SITE_URL=https://shivam349.github.io/portfolio` to `SITE_URL=https://clientdomain.com`.
+   Set `SITE_URL=https://clientdomain.com`.
 2. **Rebuild**:
    `npm run build`
-   - Canonical URLs are automatically updated.
-   - `public/sitemap.xml` and `public/robots.txt` automatically update with the new domain.
-   - JSON-LD and OpenGraph URLs automatically adjust.
-3. **Google Search Console**:
-   - Add `https://clientdomain.com` in Google Search Console.
-   - Open `/admin/seo` and click **Select Property** to switch to the new domain.
+   - Canonical URLs, sitemap, robots.txt, and structured data automatically update.
+3. **Connect Google**:
+   - Add `https://clientdomain.com` to Search Console.
+   - In `/admin/seo`, click **Select Property** to bind the new domain.
 
 ---
 
@@ -174,9 +153,10 @@ When reusing this template for a client or migrating from GitHub Pages to a cust
 - **Sitemap Submitted ≠ Indexed**: Submitting a sitemap prompts Google to discover URLs. Google independently decides when to crawl and index pages.
 - **No Faking**: Statuses displayed are strictly derived from live Google Search Console API data:
   - `DEPLOYED`
+  - `SITEMAP SUBMITTED`
   - `DISCOVERED`
   - `CRAWLED`
   - `INDEXED`
   - `NOT INDEXED`
   - `UNKNOWN`
-- **Request Indexing**: Google requires priority indexing requests to be submitted through Google Search Console's official URL Inspection UI. Direct deep links are provided in the `/admin/seo` dashboard.
+- **Priority Indexing**: Google requires priority indexing requests to be submitted through Google Search Console's official URL Inspection interface. Direct deep links are provided in the `/admin/seo` dashboard.

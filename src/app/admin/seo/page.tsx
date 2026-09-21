@@ -13,24 +13,29 @@ import {
   Zap,
   ShieldCheck,
   ShieldAlert,
-  ArrowRight,
   Sparkles,
   Layers,
   ChevronRight,
   HelpCircle,
   Unplug,
+  User,
+  KeyRound,
 } from 'lucide-react';
 
-const API_BASE = 'http://localhost:3001';
+const API_BASE = process.env.NEXT_PUBLIC_SEO_BACKEND_URL || 'http://localhost:3001';
 
 interface StatusState {
   connected: boolean;
+  googleAccount: string;
   selectedProperty: string | null;
+  permissionLevel: string;
   isVerified: boolean;
   sitemapSubmitted: boolean;
   lastSubmitted: string | null;
   siteUrl: string;
   hasCredentials: boolean;
+  environment: string;
+  redirectUri: string;
   indexing: {
     homepage: string;
     projects: string;
@@ -41,6 +46,7 @@ interface StatusState {
     sitemaps: string;
     urlInspection: string;
     propertySettings: string;
+    ownershipVerification?: string;
   };
 }
 
@@ -99,7 +105,7 @@ export default function SeoAdminPage() {
     if (!apiOnline) {
       setMessage({
         type: 'error',
-        text: 'SEO Admin server is not running. Start it with "npm run dev" or "npm run seo:admin".',
+        text: 'SEO Automation Backend is not reachable. Ensure the backend is running at ' + API_BASE,
       });
       return;
     }
@@ -111,7 +117,7 @@ export default function SeoAdminPage() {
       setActionLoading('disconnect');
       const res = await fetch(`${API_BASE}/api/auth/google/disconnect`, { method: 'POST' });
       if (res.ok) {
-        setMessage({ type: 'info', text: 'Google account disconnected successfully.' });
+        setMessage({ type: 'info', text: 'Google account disconnected and tokens removed.' });
         fetchStatus();
       }
     } catch (err: any) {
@@ -290,14 +296,27 @@ export default function SeoAdminPage() {
           </div>
         </div>
 
+        {/* Backend connectivity badge */}
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${apiOnline ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
+            <span className="text-slate-400">SEO Automation Backend:</span>
+            <span className="font-mono text-cyan-300">{API_BASE}</span>
+          </div>
+          <div className="flex items-center gap-3 text-slate-400">
+            <span>Environment: <strong className="text-slate-200 font-mono">{status?.environment || 'Development'}</strong></span>
+            <span>Target: <strong className="text-slate-200 font-mono">{status?.siteUrl || 'Configured'}</strong></span>
+          </div>
+        </div>
+
         {/* Offline notice if API server isn't reached */}
         {!apiOnline && (
           <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-start gap-3 text-sm">
             <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
             <div>
-              <p className="font-semibold">Local SEO Admin Server Not Detected</p>
+              <p className="font-semibold">SEO Automation Backend Not Reachable</p>
               <p className="text-amber-300/80 mt-1">
-                To interact live with Google OAuth, property selection, and sitemap submission, start the dev environment by running{' '}
+                To interact with Google OAuth and execute Search Console actions, run{' '}
                 <code className="px-1.5 py-0.5 rounded bg-black/40 text-amber-200 font-mono text-xs">npm run dev</code> or{' '}
                 <code className="px-1.5 py-0.5 rounded bg-black/40 text-amber-200 font-mono text-xs">npm run seo:server</code>.
               </p>
@@ -345,7 +364,7 @@ export default function SeoAdminPage() {
             <button
               onClick={handleRunSeoSetup}
               disabled={setupRunning || !apiOnline}
-              className="shrink-0 inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/20 transition disabled:opacity-50"
+              className="shrink-0 inline-flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold shadow-lg shadow-cyan-500/20 transition disabled:opacity-50 cursor-pointer"
             >
               <Zap className="w-5 h-5" />
               {setupRunning ? 'Running Setup...' : 'RUN SEO SETUP'}
@@ -378,29 +397,31 @@ export default function SeoAdminPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Connection */}
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Connection</span>
+            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Google Account</span>
             <div className="flex items-center gap-2">
               {status?.connected ? (
                 <>
                   <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                  <span className="text-lg font-bold text-emerald-400">Connected</span>
+                  <span className="text-base font-bold text-emerald-400 truncate">Connected</span>
                 </>
               ) : (
                 <>
                   <ShieldAlert className="w-5 h-5 text-slate-400" />
-                  <span className="text-lg font-bold text-slate-300">Not Connected</span>
+                  <span className="text-base font-bold text-slate-300">Not Connected</span>
                 </>
               )}
             </div>
-            <p className="text-xs text-slate-500">Official Google OAuth 2.0</p>
+            <p className="text-xs text-slate-400 truncate" title={status?.googleAccount}>
+              {status?.connected ? status.googleAccount : 'OAuth 2.0'}
+            </p>
           </div>
 
           {/* Property */}
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Property</span>
+            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Search Console Property</span>
             <div className="flex items-center gap-2">
               <Globe className="w-5 h-5 text-cyan-400" />
-              <span className="text-lg font-bold text-slate-100 truncate">
+              <span className="text-base font-bold text-slate-100 truncate">
                 {status?.selectedProperty ? 'Selected' : 'Not Selected'}
               </span>
             </div>
@@ -411,36 +432,38 @@ export default function SeoAdminPage() {
 
           {/* Verification */}
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Verification</span>
+            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Ownership Verification</span>
             <div className="flex items-center gap-2">
               {status?.isVerified ? (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  <span className="text-lg font-bold text-emerald-400">Verified</span>
+                  <span className="text-base font-bold text-emerald-400">Verified</span>
                 </>
               ) : (
                 <>
                   <AlertCircle className="w-5 h-5 text-amber-400" />
-                  <span className="text-lg font-bold text-amber-400">Not Verified</span>
+                  <span className="text-base font-bold text-amber-400">Not Verified</span>
                 </>
               )}
             </div>
-            <p className="text-xs text-slate-500">Google Search Console ownership</p>
+            <p className="text-xs text-slate-500 truncate">
+              Permission: <span className="font-mono text-slate-300">{status?.permissionLevel || 'none'}</span>
+            </p>
           </div>
 
           {/* Sitemap */}
           <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Sitemap</span>
+            <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Sitemap Submission</span>
             <div className="flex items-center gap-2">
               {status?.sitemapSubmitted ? (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  <span className="text-lg font-bold text-emerald-400">Submitted</span>
+                  <span className="text-base font-bold text-emerald-400">Submitted</span>
                 </>
               ) : (
                 <>
                   <Clock className="w-5 h-5 text-slate-400" />
-                  <span className="text-lg font-bold text-slate-300">Not Submitted</span>
+                  <span className="text-base font-bold text-slate-300">Not Submitted</span>
                 </>
               )}
             </div>
@@ -463,7 +486,7 @@ export default function SeoAdminPage() {
               <button
                 onClick={handleConnectGoogle}
                 disabled={actionLoading !== null}
-                className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white text-slate-900 hover:bg-slate-100 font-semibold text-sm transition shadow-sm"
+                className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-white text-slate-900 hover:bg-slate-100 font-semibold text-sm transition shadow-sm cursor-pointer"
               >
                 <Globe className="w-4 h-4 text-blue-600" />
                 Connect Google Search Console
@@ -472,7 +495,7 @@ export default function SeoAdminPage() {
               <button
                 onClick={handleDisconnect}
                 disabled={actionLoading !== null}
-                className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-sm border border-slate-700 transition"
+                className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-sm border border-slate-700 transition cursor-pointer"
               >
                 <Unplug className="w-4 h-4 text-rose-400" />
                 Disconnect Account
@@ -483,7 +506,7 @@ export default function SeoAdminPage() {
             <button
               onClick={handleLoadProperties}
               disabled={!status?.connected || actionLoading !== null}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40"
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40 cursor-pointer"
             >
               <Globe className="w-4 h-4 text-cyan-400" />
               {actionLoading === 'properties' ? 'Fetching...' : 'Select Property'}
@@ -493,17 +516,17 @@ export default function SeoAdminPage() {
             <button
               onClick={handleVerifyProperty}
               disabled={!status?.selectedProperty || actionLoading !== null}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40"
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40 cursor-pointer"
             >
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              {actionLoading === 'verify' ? 'Checking...' : 'Verify Property'}
+              {actionLoading === 'verify' ? 'Checking...' : 'Verify Ownership'}
             </button>
 
             {/* Submit Sitemap Button */}
             <button
               onClick={handleSubmitSitemap}
               disabled={!status?.isVerified || actionLoading !== null}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40"
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40 cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4 text-cyan-400" />
               {actionLoading === 'sitemap' ? 'Submitting...' : 'Submit Sitemap'}
@@ -513,10 +536,10 @@ export default function SeoAdminPage() {
             <button
               onClick={() => handleCheckIndexing()}
               disabled={!status?.selectedProperty || actionLoading !== null}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40"
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-sm border border-slate-700 transition disabled:opacity-40 cursor-pointer"
             >
               <Search className="w-4 h-4 text-amber-400" />
-              {actionLoading === 'indexing' ? 'Inspecting...' : 'Check Indexing'}
+              {actionLoading === 'indexing' ? 'Inspecting...' : 'Inspect URL'}
             </button>
 
             {/* Open Search Console */}
@@ -524,7 +547,7 @@ export default function SeoAdminPage() {
               href={status?.shortcuts.searchConsole || 'https://search.google.com/search-console'}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-cyan-300 font-semibold text-sm border border-cyan-500/30 transition"
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-cyan-300 font-semibold text-sm border border-cyan-500/30 transition cursor-pointer"
             >
               <ExternalLink className="w-4 h-4" />
               Open Search Console
@@ -603,7 +626,7 @@ export default function SeoAdminPage() {
                 </span>
                 <button
                   onClick={() => handleCheckIndexing(status?.siteUrl)}
-                  className="text-xs text-cyan-400 hover:underline"
+                  className="text-xs text-cyan-400 hover:underline cursor-pointer"
                 >
                   Inspect
                 </button>
@@ -634,7 +657,7 @@ export default function SeoAdminPage() {
           </div>
 
           <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-400">
-            <strong className="text-slate-300">Google Indexing Policy:</strong> Submitting a sitemap prompts Google to discover URLs. Google does not guarantee immediate indexing. To request priority indexing, open the URL Inspection tool in Search Console and click &quot;Request Indexing&quot;.
+            <strong className="text-slate-300">Google Indexing Policy:</strong> Submitting a sitemap prompts Google to discover URLs. Google does not guarantee immediate indexing. Priority indexing requests must be submitted directly through Google Search Console&apos;s URL Inspection tool.
           </div>
         </div>
 

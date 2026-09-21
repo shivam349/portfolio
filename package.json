@@ -13,7 +13,8 @@
     "seo:report": "node scripts/seo-report.mjs",
     "seo:server": "node scripts/seo-server.mjs",
     "seo:admin": "node scripts/seo-server.mjs",
-    "seo:sync": "node scripts/gsc-sync.mjs"
+    "seo:sync": "node scripts/gsc-sync.mjs",
+    "google:check": "node scripts/google-check.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

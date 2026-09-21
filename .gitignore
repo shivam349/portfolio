@@ -37,8 +37,13 @@ yarn-error.log*
 .env.development
 !.env.example
 
-# google tokens
+# google tokens and credentials
 .gsc-tokens.json
+.gsc-connections.json
+client_secret*.json
+*credentials*.json
+*oauth*.json
+*google*.json
 
 # vercel
 .vercel
