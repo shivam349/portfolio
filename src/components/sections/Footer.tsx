@@ -53,6 +53,9 @@ export function Footer() {
             <a href="#contact" className="hover:text-white transition-colors">
               Contact
             </a>
+            <a href="/privacy/" className="hover:text-white transition-colors text-slate-300">
+              Privacy Policy
+            </a>
           </div>
 
           {/* Right Back to Top */}

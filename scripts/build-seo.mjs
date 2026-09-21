@@ -55,6 +55,7 @@ console.log(`[SEO Build] Generating sitemap.xml and robots.txt for: ${siteUrl}`)
 // Public routes (excluding /admin, /api, private routes)
 const publicRoutes = [
   { path: '/', priority: '1.0', changefreq: 'monthly' },
+  { path: '/privacy/', priority: '0.5', changefreq: 'monthly' },
 ];
 
 // Generate sitemap XML
