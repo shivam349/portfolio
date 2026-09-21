@@ -9,7 +9,9 @@ function cleanUrl(url: string): string {
 const rawSiteUrl =
   process.env.SITE_URL ||
   process.env.NEXT_PUBLIC_SITE_URL ||
-  'https://shivam349.github.io/portfolio';
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app');
 
 export const seoConfig = {
   siteUrl: cleanUrl(rawSiteUrl),

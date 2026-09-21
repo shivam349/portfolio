@@ -183,7 +183,7 @@ export default function SetupWizardPage() {
                 <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800">
                   <span className="text-slate-500">SITE_URL:</span>
                   <span className="block text-cyan-300 font-semibold mt-0.5 truncate">
-                    {status?.siteUrl || 'https://shivam349.github.io/portfolio'}
+                    {status?.siteUrl || 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app'}
                   </span>
                 </div>
                 <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800">

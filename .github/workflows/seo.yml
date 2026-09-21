@@ -41,13 +41,13 @@ jobs:
       - name: Post-Deployment Live Website Verification (Steps 1-9)
         run: node scripts/ci-seo-verify.mjs
         env:
-          SITE_URL: "https://shivam349.github.io/portfolio"
+          SITE_URL: "https://portfolio-eight-sigma-mzugu1b20s.vercel.app"
         continue-on-error: true
 
       - name: Google Search Console Automated Sync (Step 10)
         run: npm run seo:sync
         env:
-          SITE_URL: "https://shivam349.github.io/portfolio"
+          SITE_URL: "https://portfolio-eight-sigma-mzugu1b20s.vercel.app"
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
@@ -55,4 +55,4 @@ jobs:
       - name: Output Final SEO Status Report
         run: npm run seo:report
         env:
-          SITE_URL: "https://shivam349.github.io/portfolio"
+          SITE_URL: "https://portfolio-eight-sigma-mzugu1b20s.vercel.app"

@@ -3,4 +3,4 @@ Allow: /
 Disallow: /admin/
 Disallow: /api/
 
-Sitemap: https://shivam349.github.io/portfolio/sitemap.xml
+Sitemap: https://portfolio-eight-sigma-mzugu1b20s.vercel.app/sitemap.xml

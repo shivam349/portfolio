@@ -70,7 +70,9 @@ export function getConfig() {
   const rawSiteUrl =
     process.env.SITE_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
-    'https://shivam349.github.io/portfolio';
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app');
 
   const siteUrl = rawSiteUrl.replace(/\/+$/, '');
   const isProd = process.env.NODE_ENV === 'production' || process.env.GITHUB_ACTIONS === 'true';
