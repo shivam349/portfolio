@@ -1,0 +1,58 @@
+name: Automated SEO & Search Console System
+
+on:
+  workflow_run:
+    workflows: ["Deploy to GitHub Pages"]
+    types:
+      - completed
+  workflow_dispatch:
+  schedule:
+    # Weekly SEO health and indexing check (every Monday at 04:00 UTC)
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  seo-verify-and-sync:
+    name: SEO Verification & Search Console Sync
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build Local SEO Assets
+        run: npm run seo:build
+
+      - name: Run Technical SEO Health Check
+        run: npm run seo:check
+
+      - name: Post-Deployment Live Website Verification (Steps 1-9)
+        run: node scripts/ci-seo-verify.mjs
+        env:
+          SITE_URL: "https://shivam349.github.io/portfolio"
+        continue-on-error: true
+
+      - name: Google Search Console Automated Sync (Step 10)
+        run: npm run seo:sync
+        env:
+          SITE_URL: "https://shivam349.github.io/portfolio"
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+
+      - name: Output Final SEO Status Report
+        run: npm run seo:report
+        env:
+          SITE_URL: "https://shivam349.github.io/portfolio"

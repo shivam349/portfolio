@@ -3,10 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/dev.mjs",
+    "dev:next": "next dev",
+    "build": "npm run seo:build && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seo:build": "node scripts/build-seo.mjs",
+    "seo:check": "node scripts/seo-check.mjs",
+    "seo:report": "node scripts/seo-report.mjs",
+    "seo:server": "node scripts/seo-server.mjs",
+    "seo:admin": "node scripts/seo-server.mjs",
+    "seo:sync": "node scripts/gsc-sync.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",

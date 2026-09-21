@@ -1,0 +1,414 @@
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
+
+const TOKENS_FILE = path.join(rootDir, '.gsc-tokens.json');
+
+// Load environment variables from .env.local if present
+export function loadEnv() {
+  const envPath = path.join(rootDir, '.env.local');
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+        const [k, ...v] = trimmed.split('=');
+        const key = k.trim();
+        if (!process.env[key]) {
+          process.env[key] = v.join('=').trim().replace(/^["']|["']$/g, '');
+        }
+      }
+    }
+  }
+}
+
+export function getConfig() {
+  loadEnv();
+  const rawSiteUrl =
+    process.env.SITE_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    'https://shivam349.github.io/portfolio';
+
+  const siteUrl = rawSiteUrl.replace(/\/+$/, '');
+
+  return {
+    siteUrl,
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+    redirectUri:
+      process.env.GOOGLE_REDIRECT_URI ||
+      'http://localhost:3001/api/auth/google/callback',
+    apiPort: parseInt(process.env.SEO_ADMIN_PORT || '3001', 10),
+  };
+}
+
+export function loadSavedState() {
+  if (!fs.existsSync(TOKENS_FILE)) {
+    return {
+      tokens: null,
+      selectedProperty: null,
+      isVerified: false,
+      sitemapSubmitted: false,
+      lastSubmitted: null,
+      indexing: {
+        homepage: 'UNKNOWN',
+        projects: 'UNKNOWN',
+        about: 'UNKNOWN',
+      },
+      csrfState: null,
+    };
+  }
+  try {
+    return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf8'));
+  } catch {
+    return {
+      tokens: null,
+      selectedProperty: null,
+      isVerified: false,
+      sitemapSubmitted: false,
+      lastSubmitted: null,
+      indexing: {
+        homepage: 'UNKNOWN',
+        projects: 'UNKNOWN',
+        about: 'UNKNOWN',
+      },
+      csrfState: null,
+    };
+  }
+}
+
+export function saveState(stateUpdates) {
+  const current = loadSavedState();
+  const updated = {
+    ...current,
+    ...stateUpdates,
+    updatedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(TOKENS_FILE, JSON.stringify(updated, null, 2), 'utf8');
+  return updated;
+}
+
+export function clearState() {
+  if (fs.existsSync(TOKENS_FILE)) {
+    fs.unlinkSync(TOKENS_FILE);
+  }
+  return loadSavedState();
+}
+
+export function generateOAuthUrl() {
+  const config = getConfig();
+  if (!config.clientId) {
+    throw new Error('GOOGLE_CLIENT_ID is not configured in .env.local');
+  }
+
+  const csrfState = crypto.randomBytes(24).toString('hex');
+  saveState({ csrfState });
+
+  const scopes = [
+    'https://www.googleapis.com/auth/webmasters.readonly',
+    'https://www.googleapis.com/auth/webmasters',
+  ].join(' ');
+
+  const params = new URLSearchParams({
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
+    response_type: 'code',
+    scope: scopes,
+    access_type: 'offline',
+    prompt: 'consent',
+    state: csrfState,
+  });
+
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export async function exchangeCode(code, returnedState) {
+  const config = getConfig();
+  const state = loadSavedState();
+
+  if (returnedState && state.csrfState && returnedState !== state.csrfState) {
+    throw new Error('Invalid OAuth CSRF state parameter. Request rejected.');
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      redirect_uri: config.redirectUri,
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Google OAuth token exchange failed: ${response.status} - ${errorBody}`);
+  }
+
+  const tokenData = await response.json();
+  const expiryTimestamp = Date.now() + (tokenData.expires_in || 3600) * 1000;
+
+  const currentSaved = loadSavedState();
+  const refreshToken = tokenData.refresh_token || (currentSaved.tokens?.refresh_token ?? null);
+
+  const tokens = {
+    access_token: tokenData.access_token,
+    refresh_token: refreshToken,
+    expires_at: expiryTimestamp,
+    scope: tokenData.scope,
+    token_type: tokenData.token_type,
+  };
+
+  saveState({ tokens, csrfState: null });
+  return tokens;
+}
+
+export async function getValidAccessToken() {
+  const config = getConfig();
+  const state = loadSavedState();
+
+  // Allow refresh token override from environment (e.g. GitHub Actions secret)
+  const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const refreshToken = envRefreshToken || state.tokens?.refresh_token;
+
+  if (!state.tokens?.access_token && !refreshToken) {
+    throw new Error('Google Search Console is not connected. Connect via OAuth first.');
+  }
+
+  // Check if current token has at least 60 seconds remaining
+  if (state.tokens?.access_token && state.tokens.expires_at > Date.now() + 60000) {
+    return state.tokens.access_token;
+  }
+
+  if (!refreshToken) {
+    throw new Error('Google OAuth access token expired and no refresh token is available. Reconnect Google.');
+  }
+
+  // Fetch new access token using refresh_token
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: config.clientId,
+      client_secret: config.clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to refresh Google token (${response.status}): ${errorBody}`);
+  }
+
+  const tokenData = await response.json();
+  const expiryTimestamp = Date.now() + (tokenData.expires_in || 3600) * 1000;
+
+  const newTokens = {
+    access_token: tokenData.access_token,
+    refresh_token: refreshToken,
+    expires_at: expiryTimestamp,
+    scope: tokenData.scope || state.tokens?.scope,
+    token_type: tokenData.token_type || 'Bearer',
+  };
+
+  saveState({ tokens: newTokens });
+  return newTokens.access_token;
+}
+
+export async function listProperties(accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+
+  const response = await fetch('https://www.googleapis.com/webmasters/v3/sites', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error('Google authorization expired (401). Please reconnect your Google account.');
+    }
+    if (response.status === 403) {
+      throw new Error('Search Console API permission denied (403). Ensure Search Console API is enabled in Google Cloud Console.');
+    }
+    const errorBody = await response.text();
+    throw new Error(`Search Console sites.list error (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data.siteEntry || [];
+}
+
+export function findMatchingProperty(properties, siteUrl) {
+  if (!properties || properties.length === 0) return null;
+
+  const normalizedSiteUrl = siteUrl.replace(/\/+$/, '').toLowerCase();
+  const parsed = new URL(normalizedSiteUrl);
+  const hostname = parsed.hostname.toLowerCase();
+
+  // 1. Exact match with trailing slash
+  const exactSlash = `${normalizedSiteUrl}/`;
+  const exactMatch = properties.find(
+    (p) =>
+      p.siteUrl.toLowerCase() === normalizedSiteUrl ||
+      p.siteUrl.toLowerCase() === exactSlash
+  );
+  if (exactMatch) return exactMatch.siteUrl;
+
+  // 2. Domain property match (sc-domain:hostname)
+  const domainProp = `sc-domain:${hostname}`;
+  const domainMatch = properties.find(
+    (p) => p.siteUrl.toLowerCase() === domainProp
+  );
+  if (domainMatch) return domainMatch.siteUrl;
+
+  // 3. Prefix match
+  const prefixMatch = properties.find((p) =>
+    normalizedSiteUrl.startsWith(p.siteUrl.replace(/\/+$/, '').toLowerCase())
+  );
+  if (prefixMatch) return prefixMatch.siteUrl;
+
+  return null;
+}
+
+export async function verifyProperty(property, accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+  const encodedProperty = encodeURIComponent(property);
+
+  const response = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodedProperty}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      return { verified: false, permissionLevel: 'none', message: 'Property not found in Google Search Console account.' };
+    }
+    const errorBody = await response.text();
+    throw new Error(`Search Console verification check failed (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json();
+  const isVerified =
+    data.permissionLevel === 'siteOwner' ||
+    data.permissionLevel === 'siteFullUser';
+
+  saveState({ selectedProperty: property, isVerified });
+
+  return {
+    verified: isVerified,
+    permissionLevel: data.permissionLevel,
+    message: isVerified
+      ? 'PROPERTY VERIFIED'
+      : 'PROPERTY NOT VERIFIED (Account lacks owner permissions or domain verification pending)',
+  };
+}
+
+export async function submitSitemap(property, sitemapUrl, accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+  const encodedProperty = encodeURIComponent(property);
+  const encodedFeed = encodeURIComponent(sitemapUrl);
+
+  const response = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodedProperty}/sitemaps/${encodedFeed}`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to submit sitemap (${response.status}): ${errorBody}`);
+  }
+
+  const timestamp = new Date().toISOString();
+  saveState({
+    selectedProperty: property,
+    sitemapSubmitted: true,
+    lastSubmitted: timestamp,
+  });
+
+  return {
+    success: true,
+    sitemapUrl,
+    property,
+    timestamp,
+    status: 'SITEMAP SUBMITTED',
+  };
+}
+
+export async function inspectUrl(property, targetUrl, accessToken) {
+  const token = accessToken || (await getValidAccessToken());
+
+  try {
+    const response = await fetch(
+      'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inspectionUrl: targetUrl,
+          siteUrl: property,
+        }),
+      }
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      const inspectionResult = data.inspectionResult || {};
+      const indexStatusResult = inspectionResult.indexStatusResult || {};
+
+      let status = 'UNKNOWN';
+      const coverage = indexStatusResult.coverageState || '';
+      const verdict = indexStatusResult.verdict || '';
+
+      if (verdict === 'PASS' || coverage.toLowerCase().includes('indexed')) {
+        status = 'INDEXED';
+      } else if (coverage.toLowerCase().includes('crawled')) {
+        status = 'CRAWLED';
+      } else if (coverage.toLowerCase().includes('discovered')) {
+        status = 'DISCOVERED';
+      } else if (verdict === 'FAIL' || coverage.toLowerCase().includes('excluded')) {
+        status = 'NOT INDEXED';
+      }
+
+      return {
+        url: targetUrl,
+        status,
+        coverageState: coverage,
+        verdict,
+        lastCrawlTime: indexStatusResult.lastCrawlTime || null,
+      };
+    }
+  } catch {
+    // Gracefully fall back to UNKNOWN
+  }
+
+  return {
+    url: targetUrl,
+    status: 'UNKNOWN',
+    note: 'Inspection requires manual check or Google URL Inspection API activation.',
+  };
+}
+
+export function getShortcuts(property) {
+  const encoded = encodeURIComponent(property || '');
+  return {
+    searchConsole: `https://search.google.com/search-console${property ? `?resource_id=${encoded}` : ''}`,
+    sitemaps: `https://search.google.com/search-console/sitemaps${property ? `?resource_id=${encoded}` : ''}`,
+    urlInspection: `https://search.google.com/search-console/inspect${property ? `?resource_id=${encoded}` : ''}`,
+    propertySettings: `https://search.google.com/search-console/settings${property ? `?resource_id=${encoded}` : ''}`,
+  };
+}
