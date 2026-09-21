@@ -13,7 +13,10 @@
     "seo:report": "node scripts/seo-report.mjs",
     "seo:server": "node scripts/seo-server.mjs",
     "seo:admin": "node scripts/seo-server.mjs",
-    "seo:sync": "node scripts/gsc-sync.mjs",
+    "seo:sync": "node scripts/google-sitemap.mjs",
+    "google:auth": "node scripts/google-auth.mjs",
+    "google:sitemap": "node scripts/google-sitemap.mjs",
+    "google:status": "node scripts/google-status.mjs",
     "google:check": "node scripts/google-check.mjs"
   },
   "dependencies": {

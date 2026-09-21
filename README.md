@@ -85,3 +85,35 @@ d:/d/
 ## 📄 Customization
 
 To adapt this template for another client or profession, see the step-by-step guide in [`CLIENT_CUSTOMIZATION_GUIDE.md`](./CLIENT_CUSTOMIZATION_GUIDE.md).
+
+---
+
+## 🔍 Official Google Search Console API Automation
+
+This portfolio integrates official Google Search Console API automation via OAuth 2.0 (no browser scraping or Playwright required):
+
+```bash
+# 1. Verify Google Cloud OAuth & API readiness
+npm run google:check
+
+# 2. One-time OAuth authorization (run once locally)
+npm run google:auth
+
+# 3. Validate and submit sitemap via official Search Console API
+npm run google:sitemap
+
+# 4. View live Search Console indexing and sitemap status
+npm run google:status
+```
+
+### Pre-submission Validation
+Before submitting the sitemap to Google, `npm run google:sitemap` automatically verifies:
+1. `https://portfolio-eight-sigma-mzugu1b20s.vercel.app/sitemap.xml` returns **HTTP 200**.
+2. Sitemap contains valid XML syntax (`<urlset>...</urlset>`).
+3. All `<loc>` elements strictly match the production custom domain.
+4. `robots.txt` references the exact production sitemap URL.
+
+### Security Guarantees
+- Client Secrets and OAuth refresh tokens are encrypted at rest with AES-256-GCM.
+- Refresh tokens and keys are never printed in console logs or bundled into client JavaScript.
+- All credential files (`.env*.local`, `.gsc-tokens.json`, `client_secret*.json`) are gitignored.

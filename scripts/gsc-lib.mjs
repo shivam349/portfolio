@@ -105,6 +105,8 @@ export function getConfig() {
     redirectUri:
       process.env.GOOGLE_REDIRECT_URI ||
       'http://localhost:3001/api/auth/google/callback',
+    searchConsoleProperty: process.env.GOOGLE_SEARCH_CONSOLE_PROPERTY || null,
+    sitemapUrl: process.env.GOOGLE_SITEMAP_URL || `${siteUrl}/sitemap.xml`,
     apiPort: parseInt(process.env.SEO_ADMIN_PORT || '3001', 10),
     backendUrl:
       process.env.NEXT_PUBLIC_SEO_BACKEND_URL ||
@@ -727,3 +729,115 @@ export function getShortcuts(property) {
     ownershipVerification: `https://search.google.com/search-console/ownership${property ? `?resource_id=${encoded}` : ''}`,
   };
 }
+
+// Check whether a valid refresh token exists in environment, connection store, or tokens file
+export function hasStoredRefreshToken() {
+  loadEnv();
+  const config = getConfig();
+  const state = loadSavedState();
+  const siteConn = getConnectionForSite(config.siteUrl);
+  const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const decryptedConnToken = siteConn?.encrypted_refresh_token ? decryptText(siteConn.encrypted_refresh_token) : null;
+  const refreshToken = envRefreshToken || decryptedConnToken || state.tokens?.refresh_token;
+  return Boolean(refreshToken && refreshToken.trim().length > 0);
+}
+
+// Save refresh token to .env.local without exposing it in logs
+export function saveRefreshTokenToEnvLocal(refreshToken) {
+  if (!refreshToken) return;
+  loadEnv();
+  const envPath = path.join(rootDir, '.env.local');
+  if (!fs.existsSync(envPath)) return;
+  let content = fs.readFileSync(envPath, 'utf8');
+  if (content.includes('GOOGLE_REFRESH_TOKEN=')) {
+    content = content.replace(/GOOGLE_REFRESH_TOKEN=.*(\r?\n|$)/, `GOOGLE_REFRESH_TOKEN=${refreshToken}$1`);
+  } else {
+    content = `${content.trimEnd()}\nGOOGLE_REFRESH_TOKEN=${refreshToken}\n`;
+  }
+  fs.writeFileSync(envPath, content, 'utf8');
+}
+
+// Strict pre-submission validation for sitemap & robots.txt
+export async function verifySitemapPrerequisites(siteUrl, sitemapUrl) {
+  const normalizedSiteUrl = siteUrl.replace(/\/+$/, '');
+  const targetSitemap = sitemapUrl || `${normalizedSiteUrl}/sitemap.xml`;
+  const checks = {
+    http200: false,
+    validXml: false,
+    productionDomainOnly: false,
+    robotsTxtReferencesSitemap: false,
+  };
+  const errors = [];
+
+  // 1. Verify the sitemap URL returns HTTP 200
+  let sitemapContent = '';
+  try {
+    const sitemapRes = await fetch(targetSitemap);
+    if (sitemapRes.status === 200) {
+      checks.http200 = true;
+      sitemapContent = await sitemapRes.text();
+    } else {
+      errors.push(`Sitemap URL (${targetSitemap}) returned HTTP ${sitemapRes.status} (expected 200).`);
+    }
+  } catch (e) {
+    errors.push(`Failed to reach sitemap URL (${targetSitemap}): ${e.message}`);
+  }
+
+  // 2. Verify valid XML structure
+  if (checks.http200) {
+    if (sitemapContent.includes('<urlset') && sitemapContent.includes('</urlset>')) {
+      checks.validXml = true;
+    } else {
+      errors.push('Sitemap does not contain valid XML urlset tags (<urlset>...</urlset>).');
+    }
+  }
+
+  // 3. Verify all URLs use the production domain
+  if (checks.validXml) {
+    const locMatches = [...sitemapContent.matchAll(/<loc>(.*?)<\/loc>/g)].map((m) => m[1].trim());
+    if (locMatches.length === 0) {
+      errors.push('No <loc> URLs were found within sitemap.xml.');
+    } else {
+      const invalidUrls = locMatches.filter((url) => !url.startsWith(normalizedSiteUrl));
+      if (invalidUrls.length > 0) {
+        errors.push(
+          `Sitemap contains URLs that do not match the production domain (${normalizedSiteUrl}): ${invalidUrls.slice(0, 3).join(', ')}`
+        );
+      } else {
+        checks.productionDomainOnly = true;
+      }
+    }
+  }
+
+  // 4. Verify robots.txt references the sitemap
+  try {
+    const robotsUrl = `${normalizedSiteUrl}/robots.txt`;
+    const robotsRes = await fetch(robotsUrl);
+    if (robotsRes.status === 200) {
+      const robotsText = await robotsRes.text();
+      const sitemapMatch = robotsText.match(/Sitemap:\s*(https?:\/\/[^\s]+)/i);
+      if (sitemapMatch && sitemapMatch[1].trim().toLowerCase() === targetSitemap.toLowerCase()) {
+        checks.robotsTxtReferencesSitemap = true;
+      } else if (sitemapMatch) {
+        errors.push(
+          `robots.txt references sitemap '${sitemapMatch[1].trim()}', but target is '${targetSitemap}'.`
+        );
+      } else {
+        errors.push(`robots.txt at ${robotsUrl} is missing the "Sitemap:" directive.`);
+      }
+    } else {
+      errors.push(`robots.txt returned HTTP ${robotsRes.status} (expected 200).`);
+    }
+  } catch (e) {
+    errors.push(`Failed to reach robots.txt (${normalizedSiteUrl}/robots.txt): ${e.message}`);
+  }
+
+  const passed = Object.values(checks).every(Boolean);
+  return {
+    passed,
+    checks,
+    errors,
+    sitemapUrl: targetSitemap,
+  };
+}
+
