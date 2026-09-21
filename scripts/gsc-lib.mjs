@@ -92,7 +92,19 @@ export function getConfig() {
     return 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app';
   }
 
-  const rawSiteUrl = resolveProductionUrl();
+  // Support CLI arguments: --site <url> or --url <url> and --sitemap <url>
+  let targetSiteUrl = null;
+  let targetSitemapUrl = null;
+  const siteArgIdx = process.argv.findIndex((a) => a === '--site' || a === '--url');
+  if (siteArgIdx !== -1 && process.argv[siteArgIdx + 1]) {
+    targetSiteUrl = process.argv[siteArgIdx + 1].trim();
+  }
+  const sitemapArgIdx = process.argv.findIndex((a) => a === '--sitemap');
+  if (sitemapArgIdx !== -1 && process.argv[sitemapArgIdx + 1]) {
+    targetSitemapUrl = process.argv[sitemapArgIdx + 1].trim();
+  }
+
+  const rawSiteUrl = targetSiteUrl || resolveProductionUrl();
   const siteUrl = rawSiteUrl.replace(/\/+$/, '');
   const isProd = process.env.NODE_ENV === 'production' || process.env.GITHUB_ACTIONS === 'true';
 
@@ -106,7 +118,7 @@ export function getConfig() {
       process.env.GOOGLE_REDIRECT_URI ||
       'http://localhost:3001/api/auth/google/callback',
     searchConsoleProperty: process.env.GOOGLE_SEARCH_CONSOLE_PROPERTY || null,
-    sitemapUrl: process.env.GOOGLE_SITEMAP_URL || `${siteUrl}/sitemap.xml`,
+    sitemapUrl: targetSitemapUrl || process.env.GOOGLE_SITEMAP_URL || `${siteUrl}/sitemap.xml`,
     apiPort: parseInt(process.env.SEO_ADMIN_PORT || '3001', 10),
     backendUrl:
       process.env.NEXT_PUBLIC_SEO_BACKEND_URL ||
@@ -336,7 +348,10 @@ export async function getValidAccessToken() {
 
   const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
   const decryptedConnToken = siteConn?.encrypted_refresh_token ? decryptText(siteConn.encrypted_refresh_token) : null;
-  const refreshToken = envRefreshToken || decryptedConnToken || state.tokens?.refresh_token;
+  const allConns = loadAllConnections();
+  const fallbackConnToken = allConns.find((c) => c.encrypted_refresh_token)?.encrypted_refresh_token;
+  const anyDecryptedToken = fallbackConnToken ? decryptText(fallbackConnToken) : null;
+  const refreshToken = envRefreshToken || decryptedConnToken || anyDecryptedToken || state.tokens?.refresh_token;
 
   if (!state.tokens?.access_token && !refreshToken) {
     throw new Error('Google Search Console is not connected. Connect via OAuth first.');
@@ -755,9 +770,12 @@ export function hasStoredRefreshToken() {
   const config = getConfig();
   const state = loadSavedState();
   const siteConn = getConnectionForSite(config.siteUrl);
+  const allConns = loadAllConnections();
+  const fallbackConnToken = allConns.find((c) => c.encrypted_refresh_token)?.encrypted_refresh_token;
   const envRefreshToken = process.env.GOOGLE_REFRESH_TOKEN;
   const decryptedConnToken = siteConn?.encrypted_refresh_token ? decryptText(siteConn.encrypted_refresh_token) : null;
-  const refreshToken = envRefreshToken || decryptedConnToken || state.tokens?.refresh_token;
+  const anyDecryptedToken = fallbackConnToken ? decryptText(fallbackConnToken) : null;
+  const refreshToken = envRefreshToken || decryptedConnToken || anyDecryptedToken || state.tokens?.refresh_token;
   return Boolean(refreshToken && refreshToken.trim().length > 0);
 }
 

@@ -7,6 +7,7 @@ import {
   listProperties,
   findMatchingProperty,
   verifyProperty,
+  addProperty,
   submitSitemap,
   getSitemapStatus,
   verifySitemapPrerequisites,
@@ -84,26 +85,25 @@ async function runGoogleSitemap() {
     process.exit(1);
   }
 
-  const targetProperty =
+  let targetProperty =
     config.searchConsoleProperty ||
-    state.selectedProperty ||
     findMatchingProperty(properties, config.siteUrl);
 
   if (!targetProperty) {
-    console.warn(`\n[!] Property matching '${config.siteUrl}' was not found in account '${userEmail}'.`);
-    console.warn('Available properties:');
-    if (properties.length === 0) {
-      console.warn('  (No properties currently registered in this Google account)');
-    } else {
-      for (const p of properties) {
-        console.warn(`  - ${p.siteUrl} (permission: ${p.permissionLevel})`);
-      }
+    try {
+      console.log(`Property matching '${config.siteUrl}' was not found. Automatically registering via sites.add API...`);
+      await addProperty(config.siteUrl, accessToken);
+      targetProperty = config.siteUrl.replace(/\/+$/, '') + '/';
+      console.log(`✓ Automatically registered property: ${targetProperty}`);
+    } catch (addErr) {
+      console.warn(`\n[!] Property matching '${config.siteUrl}' was not found in account '${userEmail}'.`);
+      console.warn(`Auto-registration note: ${addErr.message}`);
+      console.warn('\nTo add this property manually:');
+      console.warn(`  1. Open https://search.google.com/search-console/welcome`);
+      console.warn(`  2. Add URL prefix: ${config.siteUrl}/`);
+      console.warn(`  3. Re-run: npm run google:sitemap\n`);
+      process.exit(isCi ? 0 : 1);
     }
-    console.warn('\nTo add this property:');
-    console.warn(`  1. Open https://search.google.com/search-console/welcome`);
-    console.warn(`  2. Add URL prefix: ${config.siteUrl}/`);
-    console.warn(`  3. Re-run: npm run google:sitemap\n`);
-    process.exit(isCi ? 0 : 1);
   }
 
   console.log(`✓ Matched Property: ${targetProperty}`);
