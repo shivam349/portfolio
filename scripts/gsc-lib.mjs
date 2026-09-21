@@ -67,13 +67,32 @@ export function decryptText(cipherText) {
 
 export function getConfig() {
   loadEnv();
-  const rawSiteUrl =
-    process.env.SITE_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app');
+  function resolveProductionUrl() {
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      return process.env.SITE_URL || 'https://shivam349.github.io/portfolio';
+    }
+    if (process.env.VERCEL === '1') {
+      if (process.env.SITE_URL && !process.env.SITE_URL.includes('github.io')) {
+        return process.env.SITE_URL;
+      }
+      if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+        return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+      }
+      return 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app';
+    }
+    if (process.env.SITE_URL && !process.env.SITE_URL.includes('github.io')) {
+      return process.env.SITE_URL;
+    }
+    if (process.env.NEXT_PUBLIC_SITE_URL && !process.env.NEXT_PUBLIC_SITE_URL.includes('github.io')) {
+      return process.env.NEXT_PUBLIC_SITE_URL;
+    }
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+    }
+    return 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app';
+  }
 
+  const rawSiteUrl = resolveProductionUrl();
   const siteUrl = rawSiteUrl.replace(/\/+$/, '');
   const isProd = process.env.NODE_ENV === 'production' || process.env.GITHUB_ACTIONS === 'true';
 

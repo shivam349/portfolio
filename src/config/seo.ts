@@ -5,13 +5,37 @@ function cleanUrl(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
-// Compute production site URL from env or fallback
-const rawSiteUrl =
-  process.env.SITE_URL ||
-  process.env.NEXT_PUBLIC_SITE_URL ||
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app');
+function resolveProductionUrl(): string {
+  // If explicitly building in GitHub Actions for GitHub Pages
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    return process.env.SITE_URL || 'https://shivam349.github.io/portfolio';
+  }
+
+  // If running on Vercel
+  if (process.env.VERCEL === '1') {
+    if (process.env.SITE_URL && !process.env.SITE_URL.includes('github.io')) {
+      return process.env.SITE_URL;
+    }
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+    }
+    return 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app';
+  }
+
+  // Any other environment (local, custom servers)
+  if (process.env.SITE_URL && !process.env.SITE_URL.includes('github.io')) {
+    return process.env.SITE_URL;
+  }
+  if (process.env.NEXT_PUBLIC_SITE_URL && !process.env.NEXT_PUBLIC_SITE_URL.includes('github.io')) {
+    return process.env.NEXT_PUBLIC_SITE_URL;
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  return 'https://portfolio-eight-sigma-mzugu1b20s.vercel.app';
+}
+
+const rawSiteUrl = resolveProductionUrl();
 
 export const seoConfig = {
   siteUrl: cleanUrl(rawSiteUrl),
